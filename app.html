@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reactive State Todo App</title>
+    <style>
+        :root {
+            --bg-main: #f4f7f6;
+            --surface: #ffffff;
+            --text-main: #2c3e50;
+            --primary: #3498db;
+            --primary-hover: #2980b9;
+            --success: #2ecc71;
+            --danger: #e74c3c;
+            --border: #e0e0e0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            display: flex;
+            justify-content: center;
+            padding: 2rem;
+            margin: 0;
+        }
+
+        .todo-container {
+            background: var(--surface);
+            width: 100%;
+            max-width: 550px;
+            padding: 2rem;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.05);
+        }
+
+        h1 {
+            margin-top: 0;
+            font-size: 1.8rem;
+            text-align: center;
+        }
+
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            padding: 12px;
+            border: 2px solid var(--border);
+            border-radius: 6px;
+            font-size: 1rem;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary);
+        }
+
+        button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .btn-primary { background: var(--primary); color: white; }
+        .btn-primary:hover { background: var(--primary-hover); }
+
+        .filters {
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+            margin-bottom: 1.5rem;
+        }
+
+        .filter-btn {
+            background: transparent;
+            color: #7f8c8d;
+            border: 1px solid transparent;
+            padding: 6px 12px;
+        }
+
+        .filter-btn.active {
+            border-color: var(--primary);
+            color: var(--primary);
+            border-radius: 20px;
+        }
+
+        .todo-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .todo-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px;
+            border-bottom: 1px solid var(--border);
+            gap: 10px;
+        }
+
+        .todo-item.completed .todo-text {
+            text-decoration: line-line-through;
+            color: #bdc3c7;
+            text-decoration: line-through;
+        }
+
+        .todo-item .todo-text {
+            flex: 1;
+            font-size: 1rem;
+            word-break: break-word;
+        }
+
+        .todo-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .edit-input {
+            flex: 1;
+            padding: 8px;
+            font-size: 1rem;
+        }
+
+        .actions {
+            display: flex;
+            gap: 5px;
+        }
+
+        .btn-action {
+            padding: 6px 10px;
+            font-size: 0.85rem;
+            border-radius: 4px;
+        }
+        .btn-edit { background: #f39c12; color: white; }
+        .btn-delete { background: var(--danger); color: white; }
+        .btn-save { background: var(--success); color: white; }
+    </style>
+</head>
+<body>
+
+    <div class="todo-container">
+        <h1>Task Manager</h1>
+        
+        <form id="todo-form" class="input-group">
+            <input type="text" id="todo-input" placeholder="What needs to be done?" required autocomplete="off">
+            <button type="submit" class="btn-primary">Add Task</button>
+        </form>
+
+        <div class="filters" id="filter-controls">
+            <button class="filter-btn active" data-filter="all">All</button>
+            <button class="filter-btn" data-filter="active">Active</button>
+            <button class="filter-btn" data-filter="completed">Completed</button>
+        </div>
+
+        <ul id="todo-list" class="todo-list"></ul>
+    </div>
+
+    <template id="todo-item-template">
+        <li class="todo-item">
+            <input type="checkbox" class="toggle-status">
+            <span class="todo-text"></span>
+            <div class="actions">
+                <button class="btn-action btn-edit">Edit</button>
+                <button class="btn-action btn-delete">Delete</button>
+            </div>
+        </li>
+    </template>
+
+    <script>
+        /**
+         * Advanced Architecture Blueprint:
+         * 1. State Proxy: Intercepts mutations to auto-save to localStorage and fire render pipelines.
+         * 2. Event Delegation: Single event listener on the parent container managing dynamic children.
+         * 3. HTML5 Templates: Safe UI cloning avoiding heavy layout thrashing and XSS vectors.
+         */
+
+        class TodoApp {
+            constructor() {
+                this.storageKey = 'advanced_todo_state';
+                
+                // Initialize state with a Proxy pattern for implicit, reactive rendering
+                this.state = this._createReactiveState({
+                    todos: this._loadFromStorage(),
+                    filter: 'all'
+                });
+
+                // Cache DOM elements
+                this.form = document.getElementById('todo-form');
+                this.input = document.getElementById('todo-input');
+                this.listContainer = document.getElementById('todo-list');
+                this.filterContainer = document.getElementById('filter-controls');
+                this.template = document.getElementById('todo-item-template');
+
+                this.init();
+            }
+
+            init() {
+                // Form submission for adding tasks
+                this.form.addEventListener('submit', (e) => this._handleAddTodo(e));
+
+                // Event Delegation setup for dynamic list elements (Toggle, Edit, Delete, Save)
+                this.listContainer.addEventListener('click', (e) => this._handleListDelegation(e));
+                this.listContainer.addEventListener('keydown', (e) => this._handleInlineEditKeydown(e));
+
+                // Event Delegation setup for filter buttons
+                this.filterContainer.addEventListener('click', (e) => this._handleFilterChange(e));
+
+                // Initial render execution
+                this._render();
+            }
+
+            /**
+             * STATE MANAGEMENT & REACTIVITY
+             * Uses JS Proxy to trap changes to arrays or filter properties.
+             */
+            _createReactiveState(initialState) {
+                const self = this;
+                return new Proxy(initialState, {
+                    set(target, property, value) {
+                        target[property] = value;
+                        
+                        // Side Effects triggered on state mutation
+                        if (property === 'todos') {
+                            self._saveToStorage(value);
+                        }
+                        
+                        self._render();
+                        return true;
+                    }
+                });
+            }
+
+            _loadFromStorage() {
+                try {
+                    const data = localStorage.getItem(this.storageKey);
+                    return data ? JSON.parse(data) : [];
+                } catch (e) {
+                    console.error("Failed to parse local storage data", e);
+                    return [];
+                }
+            }
+
+            _saveToStorage(todos) {
+                localStorage.setItem(this.storageKey, JSON.stringify(todos));
+            }
+
+            /**
+             * CRUD OPERATIONS (Mutates state, which auto-triggers _render())
+             */
+            _addTodo(text) {
+                const newTodo = {
+                    id: crypto.randomUUID(), // Modern, unique client-side identifier
+                    text: text.trim(),
+                    completed: false,
+                    isEditing: false
+                };
+                // Re-assigning the array forces the Proxy trap to execute
+                this.state.todos = [...this.state.todos, newTodo];
+            }
+
+            _toggleTodo(id) {
+                this.state.todos = this.state.todos.map(todo => 
+                    todo.id === id ? { ...todo, completed: !todo.completed } : todo
+                );
+            }
+
+            _deleteTodo(id) {
+                this.state.todos = this.state.todos.filter(todo => todo.id !== id);
+            }
+
+            _setEditMode(id, status) {
+                this.state.todos = this.state.todos.map(todo => 
+                    todo.id === id ? { ...todo, isEditing: status } : todo
+                );
+            }
+
+            _saveEditTodo(id, newText) {
+                if (!newText.trim()) {
+                    this._deleteTodo(id);
+                    return;
+                }
+                this.state.todos = this.state.todos.map(todo => 
+                    todo.id === id ? { ...todo, text: newText.trim(), isEditing: false } : todo
+                );
+            }
+
+            /**
+             * EVENT HANDLERS & DELEGATION MANAGERS
+             */
+            _handleAddTodo(e) {
+                e.preventDefault();
+                if (this.input.value.trim() === '') return;
+                
+                this._addTodo(this.input.value);
+                this.input.value = '';
+            }
+
+            _handleFilterChange(e) {
+                const targetBtn = e.target.closest('.filter-btn');
+                if (!targetBtn) return;
+
+                // Update UI visually instantly before logical processing
+                this.filterContainer.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+                targetBtn.classList.add('active');
+
+                this.state.filter = targetBtn.dataset.filter;
+            }
+
+            _handleListDelegation(e) {
+                const target = e.target;
+                const li = target.closest('.todo-item');
+                if (!li) return;
+                
+                const todoId = li.dataset.id;
+
+                // Match targets against specific UI interactions
+                if (target.classList.contains('toggle-status')) {
+                    this._toggleTodo(todoId);
+                } else if (target.classList.contains('btn-delete')) {
+                    this._deleteTodo(todoId);
+                } else if (target.classList.contains('btn-edit')) {
+                    this._setEditMode(todoId, true);
+                } else if (target.classList.contains('btn-save')) {
+                    const input = li.querySelector('.edit-input');
+                    this._saveEditTodo(todoId, input.value);
+                }
+            }
+
+            _handleInlineEditKeydown(e) {
+                if (e.target.classList.contains('edit-input') && e.key === 'Enter') {
+                    const li = e.target.closest('.todo-item');
+                    if (li) this._saveEditTodo(li.dataset.id, e.target.value);
+                }
+            }
+
+            /**
+             * HIGH PERFORMANCE RENDERING ENGINE
+             * Processes filters and paints UI natively using DocumentFragments.
+             */
+            _render() {
+                // Clear existing items completely
+                this.listContainer.innerHTML = '';
+
+                // Filtering processing layer
+                const filteredTodos = this.state.todos.filter(todo => {
+                    if (this.state.filter === 'active') return !todo.completed;
+                    if (this.state.filter === 'completed') return todo.completed;
+                    return true;
+                });
+
+                // Create a DocumentFragment to perform out-of-DOM memory operations
+                const fragment = document.createDocumentFragment();
+
+                filteredTodos.forEach(todo => {
+                    // Clone structural baseline from template element
+                    const clone = this.template.content.cloneNode(true);
+                    const li = clone.querySelector('.todo-item');
+                    
+                    li.dataset.id = todo.id;
+                    if (todo.completed) li.classList.add('completed');
+
+                    const textSpan = clone.querySelector('.todo-text');
+                    const checkbox = clone.querySelector('.toggle-status');
+                    const editBtn = clone.querySelector('.btn-edit');
+
+                    checkbox.checked = todo.completed;
+
+                    // Branch layout paths dynamically for structural UI edits
+                    if (todo.isEditing) {
+                        const input = document.createElement('input');
+                        input.type = 'text';
+                        input.className = 'edit-input';
+                        input.value = todo.text;
+                        
+                        // Swap out standard text element for text entry field safely
+                        textSpan.replaceWith(input);
+                        
+                        editBtn.textContent = 'Save';
+                        editBtn.className = 'btn-action btn-save';
+                        
+                        // Schedule focus on element after execution queue flushes
+                        setTimeout(() => input.focus(), 0);
+                    } else {
+                        // Secure assignments preventing script-injection vulnerabilities
+                        textSpan.textContent = todo.text;
+                    }
+
+                    fragment.appendChild(clone);
+                });
+
+                // Commit layout updates safely to the DOM exactly once
+                this.listContainer.appendChild(fragment);
+            }
+        }
+
+        // Initialize application instance on global context window resolution
+        window.addEventListener('DOMContentLoaded', () => {
+            new TodoApp();
+        });
+    </script>
+</body>
+</html>
